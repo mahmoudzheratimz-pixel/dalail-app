@@ -10,75 +10,131 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>دلائل الخيرات</title>
 <style>
-:root{--bg:#f6efdc;--gold:#8a6a2f;--ink:#3a2c12}
+:root{--bg:#fffef1;--gold:#8a6a2f;--ink:#3a2c12;--bar:calc(56px + env(safe-area-inset-bottom))}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;height:100%;background:#2b2314;overflow:hidden;font-family:system-ui,"Segoe UI",Tahoma,sans-serif;overscroll-behavior:none}
-#stage{position:fixed;inset:0 0 56px 0;display:flex;align-items:center;justify-content:center;touch-action:none;overflow:hidden;padding-top:env(safe-area-inset-top)}
+html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;font-family:system-ui,"Segoe UI",Tahoma,sans-serif;overscroll-behavior:none}
+/* نمط الصفحة الواحدة */
+#stage{position:fixed;left:0;right:0;top:0;bottom:var(--bar);display:none;align-items:center;justify-content:center;touch-action:none;overflow:hidden;padding-top:env(safe-area-inset-top)}
+body.paged #stage{display:flex}
 #pg{position:relative;width:100px;height:141px;transform-origin:center;flex:none;will-change:transform;background:var(--bg)}
 #pg img{width:100%;height:100%;object-fit:fill;display:block;user-select:none;-webkit-user-drag:none;pointer-events:none}
+/* نمط التمرير المتتالي */
+#scroller{position:fixed;left:0;right:0;top:env(safe-area-inset-top);bottom:var(--bar);overflow:auto;direction:ltr;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch;background:var(--bg)}
+body.paged #scroller{display:none}
+#col{width:100%}
+.sp{position:relative;width:100%;aspect-ratio:396.85/566.929;background:var(--bg);box-shadow:0 1px 0 rgba(138,106,47,.22)}
+.sp img{width:100%;height:100%;display:block;pointer-events:none;user-select:none}
 .hs{position:absolute;border-radius:10px;cursor:pointer}
 .hs:active{background:rgba(138,106,47,.28)}
-#bar{position:fixed;left:0;right:0;bottom:0;height:calc(56px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);background:var(--gold);display:flex;align-items:center;justify-content:space-between;padding-inline:8px;color:#fff;gap:6px}
-#bar button{background:rgba(255,255,255,.16);border:0;color:#fff;font:600 15px inherit;font-family:inherit;border-radius:10px;height:40px;min-width:44px;padding:0 12px}
+#bar{position:fixed;left:0;right:0;bottom:0;height:var(--bar);padding-bottom:env(safe-area-inset-bottom);background:var(--gold);display:flex;align-items:center;justify-content:space-between;padding-inline:6px;color:#fff;gap:4px}
+#bar button{background:rgba(255,255,255,.16);border:0;color:#fff;font:600 14px inherit;font-family:inherit;border-radius:10px;height:40px;min-width:40px;padding:0 8px;white-space:nowrap}
 #bar button:active{background:rgba(255,255,255,.35)}
 #bar button:disabled{opacity:.35}
-#num{display:flex;align-items:center;gap:4px;font-size:15px}
-#num input{width:54px;height:36px;text-align:center;border:0;border-radius:8px;font-size:16px;background:#fff;color:var(--ink)}
+#num{display:flex;align-items:center;gap:4px;font-size:14px;white-space:nowrap}
+#num input{width:50px;height:36px;text-align:center;border:0;border-radius:8px;font-size:16px;background:#fff;color:var(--ink)}
 </style>
 </head>
-<body>
+<body class="paged">
 <div id="stage"><div id="pg"><img id="im" alt=""></div></div>
+<div id="scroller"><div id="col"></div></div>
 <div id="bar">
-  <button id="next" aria-label="التالي">‹ التالي</button>
+  <button id="next" aria-label="التالي">‹</button>
   <div id="num"><input id="inp" type="number" inputmode="numeric" min="1"> <span id="tot"></span></div>
   <button id="home">☰ الفهرس</button>
-  <button id="prev" aria-label="السابق">السابق ›</button>
+  <button id="mode"></button>
+  <button id="prev" aria-label="السابق">›</button>
 </div>
 <script src="hotspots.js"></script>
 <script>
-const T=window.TOTAL,H=window.HOTSPOTS;
-const pg=document.getElementById('pg'),im=document.getElementById('im'),inp=document.getElementById('inp');
-let cur=1,scale=1,tx=0,ty=0;
-document.getElementById('tot').textContent='/ '+T;
-const pad=n=>String(n).padStart(3,'0');
-const RATIO=396.85/566.929;
-function fit(){
-  const st=document.getElementById('stage'),cs=getComputedStyle(st);
-  const w=st.clientWidth,h=st.clientHeight-parseFloat(cs.paddingTop||0);
-  let pw=w,ph=w/RATIO; if(ph>h){ph=h;pw=h*RATIO}
-  pg.style.width=pw+'px';pg.style.height=ph+'px';
+const T=window.TOTAL,H=window.HOTSPOTS,RATIO=396.85/566.929;
+const BLANK='data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+const $=id=>document.getElementById(id);
+const pg=$('pg'),im=$('im'),inp=$('inp'),sc=$('scroller'),col=$('col');
+const pad=n=>String(n).padStart(3,'0'),src=n=>`pages/p-${pad(n)}.jpg`;
+let cur=1,mode='scroll',scale=1,tx=0,ty=0,zoom=1;
+$('tot').textContent='/ '+T;
+try{mode=localStorage.getItem('dalail-mode')==='paged'?'paged':'scroll'}catch(e){}
+
+function setCur(n){
+  cur=n;inp.value=n;
+  $('prev').disabled=n<=1;$('next').disabled=n>=T;
+  try{localStorage.setItem('dalail-page',n)}catch(e){}
 }
-addEventListener('resize',fit);addEventListener('orientationchange',fit);
-function applyT(){pg.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`}
-function go(n,push=true){
-  n=Math.max(1,Math.min(T,n));cur=n;
-  scale=1;tx=ty=0;applyT();
-  im.src=`pages/p-${pad(n)}.jpg`;
-  pg.querySelectorAll('.hs').forEach(e=>e.remove());
+function hotspots(n,parent){
   (H[n]||[]).forEach(h=>{
     const a=document.createElement('div');a.className='hs';
     a.style.cssText=`left:${h.l}%;top:${h.t}%;width:${h.w}%;height:${h.h}%`;
     a.addEventListener('click',()=>go(h.to));
-    pg.appendChild(a);
+    parent.appendChild(a);
   });
-  inp.value=n;
-  document.getElementById('prev').disabled=n<=1;
-  document.getElementById('next').disabled=n>=T;
-  try{localStorage.setItem('dalail-page',n)}catch(e){}
-  [n+1,n-1].forEach(m=>{if(m>=1&&m<=T)new Image().src=`pages/p-${pad(m)}.jpg`});
 }
-document.getElementById('home').onclick=()=>go(1);
-document.getElementById('prev').onclick=()=>go(cur-1);
-document.getElementById('next').onclick=()=>go(cur+1);
-inp.addEventListener('change',()=>go(parseInt(inp.value)||cur));
-inp.addEventListener('focus',()=>inp.select());
-// touch: swipe (RTL: swipe right => next page), pinch zoom, pan when zoomed, double tap
-const st=document.getElementById('stage');
+function go(n){
+  n=Math.max(1,Math.min(T,n));
+  mode==='scroll'?goScroll(n):showPage(n);
+}
+
+/* ---------- نمط التمرير ---------- */
+const pages=[];
+for(let i=1;i<=T;i++){
+  const d=document.createElement('div');d.className='sp';d.dataset.n=i;
+  const g=document.createElement('img');g.alt='';g.decoding='async';g.src=BLANK;d.appendChild(g);
+  hotspots(i,d);col.appendChild(d);pages.push(d);
+}
+const io=new IntersectionObserver(es=>es.forEach(e=>{
+  const d=e.target,g=d.firstChild;
+  if(e.isIntersecting){ if(g.dataset.on!=='1'){g.dataset.on='1';g.src=src(+d.dataset.n)} }
+  else if(g.dataset.on==='1'){g.dataset.on='0';g.src=BLANK}
+}),{root:sc,rootMargin:'120% 0px'});
+pages.forEach(p=>io.observe(p));
+const stride=()=>pages[1].offsetTop-pages[0].offsetTop;
+function goScroll(n){setCur(n);sc.scrollTop=pages[n-1].offsetTop}
+let ticking=false;
+sc.addEventListener('scroll',()=>{
+  if(ticking||mode!=='scroll')return;ticking=true;
+  requestAnimationFrame(()=>{
+    ticking=false;
+    const s=stride();
+    const n=Math.min(T,Math.max(1,Math.floor((sc.scrollTop+sc.clientHeight*0.35)/s)+1));
+    if(n!==cur)setCur(n);
+  });
+},{passive:true});
+function applyZoom(nz,cx,cy){
+  const r=nz/zoom,sl=sc.scrollLeft,st=sc.scrollTop;
+  col.style.width=(nz*100)+'%';
+  sc.scrollLeft=(sl+cx)*r-cx;sc.scrollTop=(st+cy)*r-cy;zoom=nz;
+}
+const dist=t=>Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY);
+let pz=null;
+sc.addEventListener('touchstart',e=>{
+  if(e.touches.length===2){const r=sc.getBoundingClientRect();
+    pz={d:dist(e.touches),z:zoom,cx:(e.touches[0].clientX+e.touches[1].clientX)/2-r.left,cy:(e.touches[0].clientY+e.touches[1].clientY)/2-r.top}}
+},{passive:true});
+sc.addEventListener('touchmove',e=>{
+  if(pz&&e.touches.length===2){e.preventDefault();
+    applyZoom(Math.max(1,Math.min(4,pz.z*dist(e.touches)/pz.d)),pz.cx,pz.cy)}
+},{passive:false});
+sc.addEventListener('touchend',e=>{if(e.touches.length<2)pz=null},{passive:true});
+
+/* ---------- نمط الصفحة الواحدة ---------- */
+function fit(){
+  const st=$('stage'),cs=getComputedStyle(st);
+  const w=st.clientWidth,h=st.clientHeight-parseFloat(cs.paddingTop||0);
+  let pw=w,ph=w/RATIO;if(ph>h){ph=h;pw=h*RATIO}
+  pg.style.width=pw+'px';pg.style.height=ph+'px';
+}
+function applyT(){pg.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`}
+function showPage(n){
+  setCur(n);scale=1;tx=ty=0;applyT();
+  im.src=src(n);
+  pg.querySelectorAll('.hs').forEach(e=>e.remove());
+  hotspots(n,pg);
+  [n+1,n-1].forEach(m=>{if(m>=1&&m<=T)new Image().src=src(m)});
+}
+const st=$('stage');
 let t0=null,pinch=null,lastTap=0;
-const dist=e=>Math.hypot(e[0].clientX-e[1].clientX,e[0].clientY-e[1].clientY);
 st.addEventListener('touchstart',e=>{
   if(e.touches.length===2){pinch={d:dist(e.touches),s:scale};t0=null}
-  else if(e.touches.length===1){t0={x:e.touches[0].clientX,y:e.touches[0].clientY,tx,ty,t:Date.now(),moved:false}}
+  else if(e.touches.length===1){t0={x:e.touches[0].clientX,y:e.touches[0].clientY,tx,ty,moved:false}}
 },{passive:true});
 st.addEventListener('touchmove',e=>{
   if(pinch&&e.touches.length===2){scale=Math.max(1,Math.min(4,pinch.s*dist(e.touches)/pinch.d));if(scale===1){tx=ty=0}applyT()}
@@ -97,10 +153,32 @@ st.addEventListener('touchend',e=>{
   else if(!t0.moved){lastTap=Date.now()}
   t0=null;
 });
-// desktop: arrow keys
-addEventListener('keydown',e=>{if(e.target===inp)return;if(e.key==='ArrowLeft')go(cur+1);if(e.key==='ArrowRight')go(cur-1)});
+
+/* ---------- التبديل بين النمطين ---------- */
+function setMode(m,keep=true){
+  mode=m;
+  try{localStorage.setItem('dalail-mode',m)}catch(e){}
+  document.body.classList.toggle('paged',m==='paged');
+  $('mode').textContent=m==='scroll'?'▭ صفحة':'⇅ تمرير';
+  $('mode').title=m==='scroll'?'عرض صفحة واحدة':'عرض متتالي';
+  const n=cur;
+  if(m==='scroll'){zoom=1;col.style.width='100%';requestAnimationFrame(()=>goScroll(n))}
+  else{fit();showPage(n)}
+}
+$('mode').onclick=()=>setMode(mode==='scroll'?'paged':'scroll');
+$('home').onclick=()=>go(1);
+$('prev').onclick=()=>go(cur-1);
+$('next').onclick=()=>go(cur+1);
+inp.addEventListener('change',()=>go(parseInt(inp.value)||cur));
+inp.addEventListener('focus',()=>inp.select());
+addEventListener('resize',()=>{fit();if(mode==='scroll')requestAnimationFrame(()=>{sc.scrollTop=pages[cur-1].offsetTop})});
+addEventListener('keydown',e=>{if(e.target===inp)return;
+  if(e.key==='ArrowLeft'||e.key==='PageDown')go(cur+1);
+  if(e.key==='ArrowRight'||e.key==='PageUp')go(cur-1)});
+
 let start=1;try{start=parseInt(localStorage.getItem('dalail-page'))||1}catch(e){}
-fit();go(start);
+cur=Math.max(1,Math.min(T,start));
+fit();setMode(mode);
 if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 </script>
 </body>
