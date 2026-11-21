@@ -1,0 +1,37 @@
+name: Build iOS (unsigned)
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm install
+      - name: Optimize page images
+        run: |
+          LIMIT=88
+          for q in 85 80 75 70 65 60 55; do
+            rm -rf /tmp/pages_out && mkdir /tmp/pages_out
+            for f in www/pages/*.jpg; do
+              sips -Z 2000 -s format jpeg -s formatOptions $q "$f" --out /tmp/pages_out/$(basename "$f") >/dev/null
+            done
+            s=$(du -sm /tmp/pages_out | cut -f1)
+            echo "quality=$q pages_size=${s}MB"
+            [ "$s" -le "$LIMIT" ] && break
+          done
+          rm -rf www/pages && cp -r /tmp/pages_out www/pages
+      - run: npx cap add ios
+      - run: npx --yes @capacitor/assets generate --ios
+      - run: npx cap sync ios
+      - name: Build unsigned app
+        run: |
+          cd ios/App
+          xcodebuild -workspace App.xcworkspace -scheme App -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+          mkdir -p Payload && cp -r build/Build/Products/Release-iphoneos/App.app Payload/
+          zip -qry ../../app-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dalail-ios-ipa
+          path: app-unsigned.ipa
